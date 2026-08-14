@@ -1,22 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Horizontal Legend plugin for QGIS Print Layout.
-
-The plugin adds a toolbar/menu action to every QGIS Print Layout designer. It
-operates on the selected QgsLayoutItemLegend and arranges legend content across
-columns to create a compact horizontal legend.
-"""
-
-from qgis.PyQt.QtCore import QCoreApplication
-from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog
-from qgis.core import QgsLayoutItemLegend, QgsProject
+"""Horizontal Legend plugin for QGIS Print Layout."""
 
 import os
 import weakref
 
+from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QAction, QApplication, QInputDialog, QMessageBox, QToolBar
+from qgis.core import QgsLayoutItemLegend
+
 
 class HorizontalLegendPlugin:
-    """QGIS plugin entry point."""
+    """Add a horizontal-legend command to QGIS and Print Layout designers."""
 
     def __init__(self, iface):
         self.iface = iface
@@ -29,27 +24,21 @@ class HorizontalLegendPlugin:
         return QCoreApplication.translate("HorizontalLegend", message)
 
     def initGui(self):
-        """Register the main QGIS action and listen for Print Layout windows."""
         self.main_action = QAction(
-            QIcon(self.icon_path),
-            self.tr("Horizontal Legend"),
-            self.iface.mainWindow(),
+            QIcon(self.icon_path), self.tr("Horizontal Legend"), self.iface.mainWindow()
         )
         self.main_action.setToolTip(
             self.tr("Create a horizontal legend from the selected Print Layout legend")
         )
         self.main_action.triggered.connect(self.run_from_active_designer)
-
         self.iface.addPluginToMenu(self.tr("&Horizontal Legend"), self.main_action)
         self.iface.addToolBarIcon(self.main_action)
 
-        # QGIS emits this whenever a Print Layout / report designer is opened.
         try:
             self.iface.layoutDesignerOpened.connect(self._on_layout_designer_opened)
         except Exception:
             pass
 
-        # Add the action to designers which may already be open.
         try:
             for designer in self.iface.openLayoutDesigners():
                 self._install_in_designer(designer)
@@ -57,7 +46,6 @@ class HorizontalLegendPlugin:
             pass
 
     def unload(self):
-        """Remove plugin actions cleanly."""
         try:
             self.iface.layoutDesignerOpened.disconnect(self._on_layout_designer_opened)
         except Exception:
@@ -77,7 +65,7 @@ class HorizontalLegendPlugin:
         self._install_in_designer(designer)
 
     def _designer_window(self, designer):
-        """Return the designer's QMainWindow across QGIS minor API differences."""
+        """Return the QMainWindow backing a QgsLayoutDesignerInterface."""
         for attr in ("window", "designerWindow"):
             try:
                 obj = getattr(designer, attr)
@@ -89,7 +77,7 @@ class HorizontalLegendPlugin:
         return None
 
     def _install_in_designer(self, designer):
-        """Add the plugin icon/action to a Print Layout designer."""
+        """Put the Horizontal Legend icon inside the Print Layout UI."""
         if designer is None or designer in self._designer_actions:
             return
 
@@ -99,13 +87,9 @@ class HorizontalLegendPlugin:
 
         action = QAction(QIcon(self.icon_path), self.tr("Horizontal Legend"), window)
         action.setObjectName("HorizontalLegendLayoutAction")
-        action.setToolTip(
-            self.tr("Arrange the selected legend horizontally across columns")
-        )
+        action.setToolTip(self.tr("Arrange the selected legend horizontally"))
         action.triggered.connect(lambda _checked=False, d=designer: self.run(d))
 
-        # Add to a layout toolbar when possible. Different QGIS releases expose
-        # different toolbar object names, so try the common ones first.
         toolbar = None
         for name in (
             "mLayoutToolbar",
@@ -114,28 +98,21 @@ class HorizontalLegendPlugin:
             "LayoutToolbar",
             "ToolsToolbar",
         ):
-            try:
-                toolbar = window.findChild(type(self.iface.mainWindow().findChild(object)), name)
-            except Exception:
-                toolbar = None
-            if toolbar and hasattr(toolbar, "addAction"):
+            toolbar = window.findChild(QToolBar, name)
+            if toolbar is not None:
                 break
 
-        # findChild typing above is not reliable in all bindings; fall back to
-        # scanning QToolBar children without importing a QGIS-private class.
+        # Object names vary by QGIS release. If no preferred toolbar is found,
+        # use the first visible layout toolbar so the icon still appears.
         if toolbar is None:
-            try:
-                from qgis.PyQt.QtWidgets import QToolBar
-                toolbars = window.findChildren(QToolBar)
-                toolbar = toolbars[0] if toolbars else None
-            except Exception:
-                toolbar = None
+            toolbars = window.findChildren(QToolBar)
+            visible = [tb for tb in toolbars if tb.isVisible()]
+            toolbar = visible[0] if visible else (toolbars[0] if toolbars else None)
 
         if toolbar is not None:
             toolbar.addAction(action)
 
-        # Also add to a menu so the command remains discoverable if a toolbar
-        # configuration hides plugin actions.
+        # Also expose the same action through a dedicated Print Layout menu.
         try:
             menu_bar = window.menuBar()
             plugin_menu = None
@@ -157,7 +134,6 @@ class HorizontalLegendPlugin:
         window = self._designer_window(designer)
         if window is not None:
             try:
-                from qgis.PyQt.QtWidgets import QToolBar
                 for toolbar in window.findChildren(QToolBar):
                     toolbar.removeAction(action)
             except Exception:
@@ -175,16 +151,14 @@ class HorizontalLegendPlugin:
             pass
 
     def _active_designer(self):
-        """Find the active/open Print Layout designer."""
         try:
             designers = self.iface.openLayoutDesigners()
         except Exception:
             designers = []
-
         if not designers:
             return None
 
-        active_window = self.iface.mainWindow().activeWindow()
+        active_window = QApplication.activeWindow()
         for designer in designers:
             if self._designer_window(designer) is active_window:
                 return designer
@@ -202,36 +176,24 @@ class HorizontalLegendPlugin:
         self.run(designer)
 
     def _selected_legend(self, designer):
-        """Return the selected legend item from the designer layout."""
         try:
             layout = designer.layout()
-        except Exception:
-            layout = None
-
-        if layout is None:
-            return None
-
-        try:
-            selected = layout.selectedLayoutItems()
+            selected = layout.selectedLayoutItems() if layout else []
         except Exception:
             selected = []
-
         for item in selected:
             if isinstance(item, QgsLayoutItemLegend):
                 return item
         return None
 
     def _suggest_columns(self, legend):
-        """Estimate a useful horizontal column count from the legend model."""
+        """Estimate columns from the number of rendered legend nodes."""
         try:
             model = legend.model()
             root = model.rootGroup()
             count = 0
             for layer_node in root.children():
                 try:
-                    layer = layer_node.layer()
-                    if layer is None:
-                        continue
                     nodes = model.layerLegendNodes(layer_node)
                     count += max(1, len(nodes))
                 except Exception:
@@ -241,7 +203,6 @@ class HorizontalLegendPlugin:
             return 4
 
     def run(self, designer):
-        """Arrange the selected QgsLayoutItemLegend horizontally."""
         legend = self._selected_legend(designer)
         parent = self._designer_window(designer) or self.iface.mainWindow()
 
@@ -249,18 +210,15 @@ class HorizontalLegendPlugin:
             QMessageBox.warning(
                 parent,
                 self.tr("Horizontal Legend"),
-                self.tr(
-                    "Select a Legend item in the Print Layout, then click the Horizontal Legend icon."
-                ),
+                self.tr("Select a Legend item in the Print Layout, then click the Horizontal Legend icon."),
             )
             return
 
-        suggested = self._suggest_columns(legend)
         columns, ok = QInputDialog.getInt(
             parent,
             self.tr("Horizontal Legend"),
             self.tr("Number of horizontal columns:"),
-            suggested,
+            self._suggest_columns(legend),
             1,
             50,
             1,
@@ -268,8 +226,10 @@ class HorizontalLegendPlugin:
         if not ok:
             return
 
+        command_started = False
         try:
             legend.beginCommand(self.tr("Create horizontal legend"))
+            command_started = True
         except Exception:
             pass
 
@@ -277,48 +237,36 @@ class HorizontalLegendPlugin:
             legend.setColumnCount(columns)
             legend.setSplitLayer(True)
             legend.setEqualColumnWidth(False)
+            legend.setColumnSpace(3.0)
+            legend.setBoxSpace(1.0)
 
-            # Compact defaults suited to horizontal legends. These are native
-            # QgsLayoutItemLegend settings and remain editable in Item Properties.
-            try:
-                legend.setColumnSpace(3.0)
-            except Exception:
-                pass
-            try:
-                legend.setBoxSpace(1.0)
-            except Exception:
-                pass
-
-            # Let QGIS resize the legend to its content after the column change.
             try:
                 legend.adjustBoxSize()
             except Exception:
                 pass
 
             legend.update()
-            layout = legend.layout()
-            if layout:
-                layout.refresh()
-
             try:
-                legend.endCommand()
+                designer.layout().refresh()
             except Exception:
                 pass
+
+            if command_started:
+                legend.endCommand()
 
             QMessageBox.information(
                 parent,
                 self.tr("Horizontal Legend"),
-                self.tr(
-                    "Horizontal legend applied. You can fine-tune symbol, text, spacing, and column settings in Item Properties."
-                ),
+                self.tr("Horizontal legend applied. Fine-tune spacing and symbols in Item Properties if needed."),
             )
         except Exception as exc:
-            try:
-                legend.cancelCommand()
-            except Exception:
-                pass
+            if command_started:
+                try:
+                    legend.cancelCommand()
+                except Exception:
+                    pass
             QMessageBox.critical(
                 parent,
                 self.tr("Horizontal Legend"),
-                self.tr("Could not update the legend:\n{}" ).format(str(exc)),
+                self.tr("Could not update the legend:\n{}").format(str(exc)),
             )
