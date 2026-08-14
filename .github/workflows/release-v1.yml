@@ -1,0 +1,36 @@
+name: Publish v1.0.0 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'RELEASE_TRIGGER.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build installable QGIS plugin ZIP
+        run: |
+          python -m compileall -q qgis_horizontal_legend
+          mkdir -p dist
+          zip -r dist/qgis-horizontal-legend.zip qgis_horizontal_legend \
+            -x '*/__pycache__/*' '*.pyc'
+
+      - name: Create v1.0.0 release and upload ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: QGIS Horizontal Legend v1.0.0
+          body: |
+            First packaged release of the QGIS Horizontal Legend plugin.
+
+            Install in QGIS using Plugins > Manage and Install Plugins > Install from ZIP, then select `qgis-horizontal-legend.zip`.
+          files: dist/qgis-horizontal-legend.zip
