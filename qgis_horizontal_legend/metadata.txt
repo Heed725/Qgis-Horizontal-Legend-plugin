@@ -1,0 +1,17 @@
+[general]
+name=Horizontal Legend
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=Create compact horizontal legends directly inside the QGIS Print Layout designer.
+about=Adds a Horizontal Legend action and icon to QGIS and to Print Layout windows. Select a layout legend, click the icon, choose the number of columns, and the plugin arranges legend entries horizontally using native QgsLayoutItemLegend settings.
+version=1.0.0
+author=Hemed Lungo
+email=
+repository=https://github.com/Heed725/Qgis-Horizontal-Legend-plugin
+tracker=https://github.com/Heed725/Qgis-Horizontal-Legend-plugin/issues
+homepage=https://github.com/Heed725/Qgis-Horizontal-Legend-plugin
+icon=icon.svg
+category=Cartography
+experimental=False
+deprecated=False
+hasProcessingProvider=no
